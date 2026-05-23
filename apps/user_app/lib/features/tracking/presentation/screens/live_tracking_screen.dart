@@ -1,66 +1,80 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared/shared.dart';
+import '../providers/tracking_provider.dart';
+import '../../../booking/domain/booking_status.dart';
 
-class LiveTrackingScreen extends StatefulWidget {
+class LiveTrackingScreen extends ConsumerStatefulWidget {
   final String bookingId;
-
-  const LiveTrackingScreen({
-    super.key,
-    required this.bookingId,
-  });
+  const LiveTrackingScreen({super.key, required this.bookingId});
 
   @override
-  State<LiveTrackingScreen> createState() => _LiveTrackingScreenState();
+  ConsumerState<LiveTrackingScreen> createState() => _LiveTrackingScreenState();
 }
 
-class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
-  int _etaMinutes = 5;
-  String _rideStatus = 'Ambulance Dispatched';
-  Timer? _timer;
+class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen> {
+  GoogleMapController? _mapController;
+  final Set<Marker> _markers = {};
+  final LatLng _userLocation = const LatLng(11.2588, 75.7804);
 
   @override
   void initState() {
     super.initState();
-    _startSimulatedTracking();
-  }
-
-  void _startSimulatedTracking() {
-    _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (_etaMinutes > 1) {
-        setState(() {
-          _etaMinutes--;
-          if (_etaMinutes == 3) {
-            _rideStatus = 'Ambulance is Near You';
-          }
-        });
-      } else if (_etaMinutes == 1) {
-        setState(() {
-          _etaMinutes = 0;
-          _rideStatus = 'Ambulance Arrived!';
-        });
-        _timer?.cancel();
-      }
-    });
+    // Start polling when screen opens
+    Future.microtask(() =>
+      ref.read(trackingProvider.notifier).startTracking(widget.bookingId)
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    // Stop polling when user leaves screen
+    ref.read(trackingProvider.notifier).stopTracking();
     super.dispose();
+  }
+
+  void _updateAmbulanceMarker(LatLng position) {
+    setState(() {
+      _markers.removeWhere((m) => m.markerId.value == 'ambulance');
+      _markers.add(Marker(
+        markerId: const MarkerId('ambulance'),
+        position: position,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueRed,  // 🚑 red marker
+        ),
+        infoWindow: const InfoWindow(title: 'Ambulance En Route'),
+      ));
+    });
+    // Smoothly move camera to follow ambulance
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLng(position),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tracking = ref.watch(trackingProvider);
+
+    // When driver location updates → move pin
+    if (tracking.driverLocation != null) {
+      // Avoid scheduling setState during build phase by using post-frame callbacks if required,
+      // but standard local marker update is safe here.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _updateAmbulanceMarker(tracking.driverLocation!);
+        }
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: Column(
           children: [
             Text('Emergency Response Live', style: AppTextStyles.subtitle),
-            Text('ID: ${widget.bookingId}', style: AppTextStyles.caption),
+            Text('ID: ${widget.bookingId}', style: AppTextStyles.caption.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.5))),
           ],
         ),
         leading: IconButton(
@@ -70,175 +84,35 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       ),
       body: Stack(
         children: [
-          // 1. Simulated Google Map view block
-          Positioned.fill(
-            bottom: 260,
-            child: Container(
-              color: theme.brightness == Brightness.light
-                  ? Colors.blueGrey[50]
-                  : Colors.grey[900],
-              child: Center(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Icon(
-                      Icons.map,
-                      size: 150,
-                      color: theme.brightness == Brightness.light
-                          ? Colors.blueGrey[100]
-                          : Colors.grey[800],
-                    ),
-                    // Paramedic vehicle icon
-                    const Positioned(
-                      top: 120,
-                      left: 100,
-                      child: Icon(
-                        Icons.airport_shuttle,
-                        size: 40,
-                        color: AppColors.emergencyRed,
-                      ),
-                    ),
-                    // Patient pin
-                    const Positioned(
-                      top: 190,
-                      left: 170,
-                      child: Icon(
-                        Icons.my_location,
-                        size: 24,
-                        color: AppColors.infoBlue,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          // Fullscreen map
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _userLocation,
+              zoom: 14,
             ),
+            markers: {
+              Marker(
+                markerId: const MarkerId('user'),
+                position: _userLocation,
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueBlue,
+                ),
+                infoWindow: const InfoWindow(title: 'Your Location'),
+              ),
+              ..._markers,
+            },
+            onMapCreated: (ctrl) => _mapController = ctrl,
+            myLocationEnabled: true,
+            mapType: MapType.normal,
+            zoomControlsEnabled: false,
           ),
 
-          // 2. ETA Floating indicators
-          Positioned(
-            top: 20,
-            left: 20,
-            right: 20,
-            child: Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd)),
-              color: AppColors.emergencyRed,
-              child: Padding(
-                padding: const EdgeInsets.all(AppSizes.md),
-                child: Row(
-                  children: [
-                    const Icon(Icons.alarm, color: Colors.white, size: AppSizes.iconMd),
-                    AppSizes.spaceMd,
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _rideStatus,
-                            style: AppTextStyles.bodyMediumBold.copyWith(color: Colors.white),
-                          ),
-                          Text(
-                            'Estimated Arrival: $_etaMinutes mins',
-                            style: AppTextStyles.caption.copyWith(color: Colors.white.withOpacity(0.9)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // 3. Driver & Ride Information Bottom Drawer
+          // Bottom driver info card
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: 260,
-            child: Container(
-              padding: const EdgeInsets.all(AppSizes.lg),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSizes.radiusXl)),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -5)),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      // Driver avatar placeholder
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: AppColors.emergencyRed.withOpacity(0.1),
-                        child: const Icon(Icons.person, color: AppColors.emergencyRed, size: AppSizes.iconLg),
-                      ),
-                      AppSizes.spaceMd,
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Ramesh Kumar', style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold)),
-                            Text('Force Traveller (ALS Ambulance)', style: AppTextStyles.caption),
-                            AppSizes.spaceXs,
-                            Row(
-                              children: [
-                                const Icon(Icons.star, color: Colors.orange, size: 14),
-                                const SizedBox(width: 4),
-                                Text('4.9', style: AppTextStyles.bodyMedium.copyWith(fontSize: 12, fontWeight: FontWeight.bold)),
-                                const SizedBox(width: 12),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.lightBorder,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    'TS-09-EX-4122',
-                                    style: AppTextStyles.caption.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  AppSizes.spaceLg,
-                  const Divider(),
-                  AppSizes.spaceMd,
-
-                  // Utility operations Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _UtilityButton(
-                        icon: Icons.phone,
-                        label: 'Call Driver',
-                        color: AppColors.successGreen,
-                        onTap: () {},
-                      ),
-                      _UtilityButton(
-                        icon: Icons.chat_bubble_outline,
-                        label: 'Message',
-                        color: AppColors.infoBlue,
-                        onTap: () {},
-                      ),
-                      _UtilityButton(
-                        icon: Icons.close,
-                        label: 'Cancel',
-                        color: AppColors.emergencyRed,
-                        onTap: () {
-                          context.go('/home');
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            child: _DriverInfoCard(tracking: tracking),
           ),
         ],
       ),
@@ -246,37 +120,181 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 }
 
-class _UtilityButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _UtilityButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
+class _DriverInfoCard extends StatelessWidget {
+  final TrackingState tracking;
+  const _DriverInfoCard({required this.tracking});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: AppSizes.sm),
-        child: Column(
-          children: [
-            CircleAvatar(
-              backgroundColor: color.withOpacity(0.1),
-              foregroundColor: color,
-              child: Icon(icon),
-            ),
-            AppSizes.spaceXs,
-            Text(label, style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600)),
-          ],
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.lg),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSizes.radiusXl)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -5)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Status timeline chips
+          _StatusTimeline(status: tracking.status),
+          AppSizes.spaceLg,
+
+          Row(
+            children: [
+              // Driver avatar
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: AppColors.emergencyRed.withValues(alpha: 0.1),
+                child: const Icon(Icons.airport_shuttle, color: AppColors.emergencyRed, size: 28),
+              ),
+              AppSizes.spaceMd,
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tracking.driverName.isEmpty ? 'Searching...' : tracking.driverName,
+                      style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      tracking.vehicleNumber.isEmpty ? 'Allocating responder...' : tracking.vehicleNumber,
+                      style: AppTextStyles.caption.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ETA badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.emergencyRed.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      tracking.eta,
+                      style: AppTextStyles.bodyMediumBold.copyWith(
+                        fontSize: 18,
+                        color: AppColors.emergencyRed,
+                      ),
+                    ),
+                    Text(
+                      'ETA',
+                      style: AppTextStyles.caption.copyWith(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+              // Call button
+              IconButton(
+                onPressed: () {
+                  // url_launcher: tel: mock
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Calling Rajan Kumar (+91 9876543210)...')),
+                  );
+                },
+                icon: const Icon(Icons.call_rounded, color: AppColors.successGreen),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.successGreen.withValues(alpha: 0.1),
+                ),
+              ),
+            ],
+          ),
+          AppSizes.spaceMd,
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusTimeline extends StatelessWidget {
+  final BookingStatus status;
+  const _StatusTimeline({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildTimelineNode(
+          label: 'Request',
+          isActive: status == BookingStatus.searching || status == BookingStatus.enRoute || status == BookingStatus.arrived,
+          isCompleted: status == BookingStatus.enRoute || status == BookingStatus.arrived,
         ),
+        _buildConnector(isCompleted: status == BookingStatus.enRoute || status == BookingStatus.arrived),
+        _buildTimelineNode(
+          label: 'En Route',
+          isActive: status == BookingStatus.enRoute || status == BookingStatus.arrived,
+          isCompleted: status == BookingStatus.arrived,
+        ),
+        _buildConnector(isCompleted: status == BookingStatus.arrived),
+        _buildTimelineNode(
+          label: 'Arrived',
+          isActive: status == BookingStatus.arrived,
+          isCompleted: status == BookingStatus.arrived,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimelineNode({
+    required String label,
+    required bool isActive,
+    required bool isCompleted,
+  }) {
+    final color = isCompleted 
+        ? AppColors.successGreen 
+        : (isActive ? AppColors.emergencyRed : Colors.grey.shade400);
+
+    return Column(
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+          ),
+          child: Center(
+            child: Icon(
+              isCompleted ? Icons.check : Icons.circle,
+              size: isCompleted ? 12 : 8,
+              color: color,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: isActive ? color : Colors.grey.shade600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConnector({required bool isCompleted}) {
+    return Expanded(
+      child: Container(
+        height: 2,
+        color: isCompleted ? AppColors.successGreen : Colors.grey.shade300,
+        margin: const EdgeInsets.only(bottom: 16),
       ),
     );
   }
