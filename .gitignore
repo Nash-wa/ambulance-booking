@@ -1,0 +1,39 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Android
+.gradle/
+local.properties
+*.apk
+*.ap_
+*.aab
+
+# iOS/macOS
+.images/
+/ios/.symlinks/
+/ios/Pods/
+/ios/Flutter/.flutter-plugins
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/macos/Pods/
+
+# IDEs and Tools
+.idea/
+.vscode/
+*.imap
+*.ext
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# System Files
+.DS_Store
+Thumbs.db

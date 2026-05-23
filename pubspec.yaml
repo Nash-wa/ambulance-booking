@@ -1,0 +1,8 @@
+name: ambulance_booking_workspace
+environment:
+  sdk: '^3.11.5'
+
+workspace:
+  - apps/user_app
+  - apps/driver_app
+  - packages/shared
