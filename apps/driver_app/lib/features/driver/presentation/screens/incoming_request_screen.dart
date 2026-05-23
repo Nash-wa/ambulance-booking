@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared/shared.dart';
 import '../providers/trip_provider.dart';
+import '../providers/driver_tracking_provider.dart';
 import '../../domain/trip_state.dart';
 
 class IncomingRequestScreen extends ConsumerStatefulWidget {
@@ -54,6 +55,10 @@ class _IncomingRequestScreenState extends ConsumerState<IncomingRequestScreen>
   void _accept() {
     _countdownTimer?.cancel();
     ref.read(tripProvider.notifier).acceptRequest();
+    
+    // Start sending GPS coordinates to backend (simulation)
+    ref.read(driverTrackingProvider.notifier).startSendingLocation('DRIVER-123');
+
     // Transition to Navigation screen
     context.go('/navigation');
   }

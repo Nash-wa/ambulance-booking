@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared/shared.dart';
 import '../providers/trip_provider.dart';
+import '../providers/driver_tracking_provider.dart';
 import '../../domain/trip_state.dart';
 
 class TripCompleteScreen extends ConsumerWidget {
@@ -107,6 +108,9 @@ class TripCompleteScreen extends ConsumerWidget {
               // Action button to go home
               ElevatedButton(
                 onPressed: () {
+                  // Stop sending GPS tracking to backend to conserve battery & resources
+                  ref.read(driverTrackingProvider.notifier).stopSendingLocation();
+
                   // Mark active trip completed and go back to standby dashboard
                   ref.read(tripProvider.notifier).completeTrip();
                   context.go('/dashboard');
