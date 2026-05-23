@@ -1,17 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../domain/repositories/auth_repository.dart';
 
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
+final authRepositoryProvider = Provider<IDriverAuthRepository>((ref) {
   return AuthRepositoryImpl();
 });
 
-abstract class AuthRepository {
-  Future<Map<String, String>> login({
-    required String phone,
-    required String password,
-  });
-}
-
-class AuthRepositoryImpl implements AuthRepository {
+class AuthRepositoryImpl implements IDriverAuthRepository {
   @override
   Future<Map<String, String>> login({
     required String phone,

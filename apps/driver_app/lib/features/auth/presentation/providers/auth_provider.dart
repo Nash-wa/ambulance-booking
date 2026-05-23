@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/auth_repository.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../../domain/auth_state.dart';
 import '../../../../core/storage/local_storage.dart';
 
@@ -10,7 +11,7 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 });
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  final AuthRepository _repository;
+  final IDriverAuthRepository _repository;
   final LocalStorage _localStorage;
 
   AuthNotifier(this._repository, this._localStorage) : super(const AuthState.initial()) {

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared/shared.dart';
 import '../../../../config/router/route_constants.dart';
+import '../providers/booking_provider.dart';
 
-class BookingSummaryScreen extends StatefulWidget {
+class BookingSummaryScreen extends ConsumerStatefulWidget {
   final String hospitalName;
 
   const BookingSummaryScreen({
@@ -12,10 +14,10 @@ class BookingSummaryScreen extends StatefulWidget {
   });
 
   @override
-  State<BookingSummaryScreen> createState() => _BookingSummaryScreenState();
+  ConsumerState<BookingSummaryScreen> createState() => _BookingSummaryScreenState();
 }
 
-class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
+class _BookingSummaryScreenState extends ConsumerState<BookingSummaryScreen> {
   int _selectedAmbulanceType = 1; // Default to ALS
 
   final List<AmbulanceTypeData> _ambulanceTypes = [
@@ -43,21 +45,49 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
   ];
 
   void _confirmBooking() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Finding your response driver...'),
-        backgroundColor: AppColors.infoBlue,
-      ),
-    );
-    // In a real application, create a booking in Firestore,
-    // generate booking ID and redirect.
-    final trackingPath = RouteConstants.tracking.replaceFirst(':bookingId', 'AMB-98012');
-    context.go(trackingPath);
+    // 1. Initialize booking state parameters reactively
+    ref.read(bookingProvider.notifier).setPickup('Gachibowli, Near Docwo Hq');
+    ref.read(bookingProvider.notifier).setDestination(widget.hospitalName);
+    ref.read(bookingProvider.notifier).selectAmbulanceType(_ambulanceTypes[_selectedAmbulanceType].name);
+
+    // 2. Dispatch async creation request
+    ref.read(bookingProvider.notifier).startBookingRequest();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bookingState = ref.watch(bookingProvider);
+
+    // Dynamic state listeners
+    ref.listen(bookingProvider, (previous, next) {
+      next.maybeWhen(
+        confirmed: (bookingId, _, _, _, _) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ambulance Allocating! ID: $bookingId'),
+              backgroundColor: AppColors.infoBlue,
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        },
+        tracking: (bookingId, _, _, _, _, _, _) {
+          final trackingPath = RouteConstants.tracking.replaceFirst(':bookingId', bookingId);
+          context.go(trackingPath);
+        },
+        error: (msg) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: AppColors.emergencyRed),
+          );
+        },
+        orElse: () {},
+      );
+    });
+
+    final bool isConfirming = bookingState.maybeWhen(
+      confirming: (_, _, _) => true,
+      orElse: () => false,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -67,8 +97,10 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
           onPressed: () => context.pop(),
         ),
       ),
-      body: SafeArea(
-        child: Column(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
           children: [
             Expanded(
               child: SingleChildScrollView(
@@ -256,8 +288,12 @@ class _BookingSummaryScreenState extends State<BookingSummaryScreen> {
           ],
         ),
       ),
-    );
-  }
+      if (isConfirming)
+        const LoadingOverlay(message: 'Allocating emergency responder...'),
+    ],
+  ),
+);
+}
 }
 
 class AmbulanceTypeData {

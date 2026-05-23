@@ -1,20 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/dio_client.dart';
+import '../domain/repositories/auth_repository.dart';
 
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
+final authRepositoryProvider = Provider<IAuthRepository>((ref) {
   return AuthRepositoryImpl();
 });
 
-abstract class AuthRepository {
-  Future<String> sendOtp(String phoneNumber);
-  Future<Map<String, String>> verifyOtp({
-    required String verificationId,
-    required String otp,
-    required String phoneNumber,
-  });
-}
-
-class AuthRepositoryImpl implements AuthRepository {
+class AuthRepositoryImpl implements IAuthRepository {
   @override
   Future<String> sendOtp(String phoneNumber) async {
     // Simulate API delay

@@ -1,12 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/booking_state.dart';
+import '../../domain/repositories/booking_repository.dart';
+import '../../data/booking_repository.dart';
 
 final bookingProvider = StateNotifierProvider<BookingNotifier, BookingState>((ref) {
-  return BookingNotifier();
+  final repository = ref.watch(bookingRepositoryProvider);
+  return BookingNotifier(repository);
 });
 
 class BookingNotifier extends StateNotifier<BookingState> {
-  BookingNotifier() : super(const BookingState.idle());
+  final IBookingRepository _repository;
+
+  BookingNotifier(this._repository) : super(const BookingState.idle());
 
   void setPickup(String address) {
     state = BookingState.pickupSelected(address: address);
@@ -42,13 +47,18 @@ class BookingNotifier extends StateNotifier<BookingState> {
     );
   }
 
-  void startBookingRequest() {
-    state.maybeWhen(
-      confirming: (pickup, destination, type) {
-        // Simulate background booking process
-        Future.delayed(const Duration(seconds: 3), () {
+  Future<void> startBookingRequest() async {
+    await state.maybeWhen(
+      confirming: (pickup, destination, type) async {
+        try {
+          final bookingId = await _repository.createBooking(
+            pickupAddress: pickup,
+            destinationAddress: destination,
+            ambulanceType: type,
+          );
+
           state = BookingState.confirmed(
-            bookingId: 'AMB-98102',
+            bookingId: bookingId,
             driverId: 'DRV-4412',
             pickupAddress: pickup,
             destinationAddress: destination,
@@ -56,24 +66,35 @@ class BookingNotifier extends StateNotifier<BookingState> {
           );
 
           // After confirmed, simulate transitioning to live tracking after 2 seconds
-          Future.delayed(const Duration(seconds: 2), () {
-            state = BookingState.tracking(
-              bookingId: 'AMB-98102',
-              driverId: 'DRV-4412',
-              pickupAddress: pickup,
-              destinationAddress: destination,
-              ambulanceType: type,
-              driverLatitude: 12.9716, // Mock coordinates
-              driverLongitude: 77.5946,
-            );
-          });
-        });
+          await Future.delayed(const Duration(seconds: 2));
+          
+          state = BookingState.tracking(
+            bookingId: bookingId,
+            driverId: 'DRV-4412',
+            pickupAddress: pickup,
+            destinationAddress: destination,
+            ambulanceType: type,
+            driverLatitude: 12.9716, // Mock coordinates
+            driverLongitude: 77.5946,
+          );
+        } catch (e) {
+          state = BookingState.error(e.toString());
+        }
       },
-      orElse: () {},
+      orElse: () async {},
     );
   }
 
-  void cancelBooking() {
+  Future<void> cancelBooking() async {
+    await state.maybeWhen(
+      confirmed: (bookingId, _, _, _, _) async {
+        await _repository.cancelBooking(bookingId);
+      },
+      tracking: (bookingId, _, _, _, _, _, _) async {
+        await _repository.cancelBooking(bookingId);
+      },
+      orElse: () async {},
+    );
     state = const BookingState.idle();
   }
 }

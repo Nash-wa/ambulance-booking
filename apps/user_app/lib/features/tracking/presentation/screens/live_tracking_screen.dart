@@ -56,15 +56,13 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tracking = ref.watch(trackingProvider);
+    final driverLocation = ref.watch(trackingProvider.select((state) => state.driverLocation));
 
     // When driver location updates → move pin
-    if (tracking.driverLocation != null) {
-      // Avoid scheduling setState during build phase by using post-frame callbacks if required,
-      // but standard local marker update is safe here.
+    if (driverLocation != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _updateAmbulanceMarker(tracking.driverLocation!);
+          _updateAmbulanceMarker(driverLocation);
         }
       });
     }
@@ -108,11 +106,11 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen> {
           ),
 
           // Bottom driver info card
-          Positioned(
+          const Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: _DriverInfoCard(tracking: tracking),
+            child: _DriverInfoCard(),
           ),
         ],
       ),
@@ -120,13 +118,16 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen> {
   }
 }
 
-class _DriverInfoCard extends StatelessWidget {
-  final TrackingState tracking;
-  const _DriverInfoCard({required this.tracking});
+class _DriverInfoCard extends ConsumerWidget {
+  const _DriverInfoCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final driverName = ref.watch(trackingProvider.select((s) => s.driverName));
+    final vehicleNumber = ref.watch(trackingProvider.select((s) => s.vehicleNumber));
+    final eta = ref.watch(trackingProvider.select((s) => s.eta));
+    final status = ref.watch(trackingProvider.select((s) => s.status));
 
     return Container(
       padding: const EdgeInsets.all(AppSizes.lg),
@@ -141,7 +142,7 @@ class _DriverInfoCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Status timeline chips
-          _StatusTimeline(status: tracking.status),
+          _StatusTimeline(status: status),
           AppSizes.spaceLg,
 
           Row(
@@ -159,11 +160,11 @@ class _DriverInfoCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      tracking.driverName.isEmpty ? 'Searching...' : tracking.driverName,
+                      driverName.isEmpty ? 'Searching...' : driverName,
                       style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600),
                     ),
                     Text(
-                      tracking.vehicleNumber.isEmpty ? 'Allocating responder...' : tracking.vehicleNumber,
+                      vehicleNumber.isEmpty ? 'Allocating responder...' : vehicleNumber,
                       style: AppTextStyles.caption.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                     ),
                   ],
@@ -180,7 +181,7 @@ class _DriverInfoCard extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      tracking.eta,
+                      eta,
                       style: AppTextStyles.bodyMediumBold.copyWith(
                         fontSize: 18,
                         color: AppColors.emergencyRed,
